@@ -1,17 +1,47 @@
 #include "raylib.h"
-#include <stdio.h>
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 #define TARGET_FPS 60
 
-#define CELL_SIZE 10
+#define CELL_SIZE 2
 #define GRID_WIDTH WINDOW_WIDTH / CELL_SIZE
 #define GRID_HEIGHT WINDOW_HEIGHT / CELL_SIZE
+#define DT 0.3
+#define DX 1.3
+#define C 2.2
+#define R (C * DT / DX) * (C * DT / DX)
+#define DAMPING 0.99
 
 #define BACKGROUND (Color){0x18, 0x18, 0x18, 255}
 #define FOREGROUND (Color){0xf5, 0xf5, 0xf5, 255}
-#define LINES_COLOR (Color){0x55, 0x55, 0x55, 255}
+
+void progress_wave(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
+                   float grid[GRID_WIDTH][GRID_HEIGHT]) {
+  float grid_next[GRID_WIDTH][GRID_HEIGHT] = {0};
+
+  for (int y = 1; y < GRID_HEIGHT - 1; ++y) {
+    for (int x = 1; x < GRID_WIDTH - 1; ++x) {
+      grid_next[x][y] =
+          2 * grid[x][y] -
+          grid_prev[x][y] + R * (grid[x + 1][y] + grid[x - 1][y] + grid[x][y + 1] +
+                             grid[x][y - 1] - 4 * grid[x][y]);
+      grid_next[x][y] *= DAMPING;
+    }
+  }
+
+  for (int y = 0; y < GRID_HEIGHT; ++y) {
+    for (int x = 0; x < GRID_WIDTH; ++x) {
+      grid_prev[x][y] = grid[x][y];
+    }
+  }
+
+  for (int y = 0; y < GRID_HEIGHT; ++y) {
+    for (int x = 0; x < GRID_WIDTH; ++x) {
+      grid[x][y] = grid_next[x][y];
+    }
+  }
+}
 
 void progress_sand(int grid[GRID_WIDTH][GRID_HEIGHT]) {
   int new_grid[GRID_WIDTH][GRID_HEIGHT] = {0};
@@ -23,7 +53,6 @@ void progress_sand(int grid[GRID_WIDTH][GRID_HEIGHT]) {
           if (y + 1 < GRID_HEIGHT - 1 && x + 1 < GRID_WIDTH - 1 &&
               grid[x][y + 1] && grid[x][y + 2] && !grid[x + 1][y + 1] &&
               !grid[x - 1][y + 1]) {
-
             int go_right = GetRandomValue(0, 1);
             new_grid[x][y] = 0;
             if (go_right) {
@@ -66,13 +95,14 @@ int main() {
   InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Waves");
   SetTargetFPS(TARGET_FPS);
 
-  int grid[GRID_WIDTH][GRID_HEIGHT] = {0};
+  float grid_prev[GRID_WIDTH][GRID_HEIGHT] = {0};
+  float grid[GRID_WIDTH][GRID_HEIGHT] = {0};
 
   while (!WindowShouldClose()) {
     BeginDrawing();
     ClearBackground(BACKGROUND);
 
-    progress_sand(grid);
+    progress_wave(grid_prev, grid);
 
     if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
       Vector2 mousePosition = GetMousePosition();
@@ -81,22 +111,19 @@ int main() {
 
       if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 &&
           gridY < GRID_HEIGHT) {
+        grid_prev[gridX][gridY] = 1;
         grid[gridX][gridY] = 1;
       }
     }
 
-    for (int y = 0; y < WINDOW_HEIGHT; y += CELL_SIZE) {
-      DrawLine(0, y, WINDOW_WIDTH, y, LINES_COLOR);
-    }
-    for (int x = 0; x < WINDOW_WIDTH; x += CELL_SIZE) {
-      DrawLine(x, 0, x, WINDOW_HEIGHT, LINES_COLOR);
-    }
     for (int x = 0; x < WINDOW_WIDTH / CELL_SIZE; x++) {
       for (int y = 0; y < WINDOW_HEIGHT / CELL_SIZE; y++) {
-        if (grid[x][y] == 1) {
-          DrawRectangle(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE,
-                        FOREGROUND);
-        }
+        Color cell_color = (Color){.r = FOREGROUND.r * grid[x][y],
+                                   .g = FOREGROUND.g * grid[x][y],
+                                   .b = FOREGROUND.b * grid[x][y],
+                                   .a = FOREGROUND.a};
+        DrawRectangle(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE,
+                      cell_color);
       }
     }
 
