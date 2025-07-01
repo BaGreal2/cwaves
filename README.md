@@ -1,3 +1,3 @@
 # CWaves
 
-A program to generates waves written in C.
+A program to generates waves written in C using Raylib.
