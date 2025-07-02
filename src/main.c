@@ -1,20 +1,24 @@
 #include "raylib.h"
+#include <math.h>
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 #define TARGET_FPS 60
 
-#define CELL_SIZE 2
+#define CELL_SIZE 3
 #define GRID_WIDTH WINDOW_WIDTH / CELL_SIZE
 #define GRID_HEIGHT WINDOW_HEIGHT / CELL_SIZE
-#define DT 0.3
-#define DX 1.3
-#define C 2.2
+#define DT 0.6
+#define DX 1.5
+#define C 1
 #define R (C * DT / DX) * (C * DT / DX)
 #define DAMPING 0.99
 
 #define BACKGROUND (Color){0x18, 0x18, 0x18, 255}
 #define FOREGROUND (Color){0xf5, 0xf5, 0xf5, 255}
+
+#define DEEP_WATER (Color){0x0a, 0x1e, 0x3c, 255}
+#define BRIGHT_WATER (Color){0x19, 0x3c, 0x6e, 255}
 
 void progress_wave(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
                    float grid[GRID_WIDTH][GRID_HEIGHT]) {
@@ -22,9 +26,8 @@ void progress_wave(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
 
   for (int y = 1; y < GRID_HEIGHT - 1; ++y) {
     for (int x = 1; x < GRID_WIDTH - 1; ++x) {
-      grid_next[x][y] =
-          2 * grid[x][y] -
-          grid_prev[x][y] + R * (grid[x + 1][y] + grid[x - 1][y] + grid[x][y + 1] +
+      grid_next[x][y] = 2 * grid[x][y] - grid_prev[x][y] +
+                        R * (grid[x + 1][y] + grid[x - 1][y] + grid[x][y + 1] +
                              grid[x][y - 1] - 4 * grid[x][y]);
       grid_next[x][y] *= DAMPING;
     }
@@ -91,6 +94,128 @@ void progress_sand(int grid[GRID_WIDTH][GRID_HEIGHT]) {
   }
 }
 
+float clamp(float value, float min, float max) {
+  if (value < min)
+    return min;
+  if (value > max)
+    return max;
+  return value;
+}
+
+typedef struct {
+  float h;
+  float s;
+  float v;
+} HSV;
+
+HSV rgb_to_hsv(Color c) {
+  float r = c.r / 255.0f;
+  float g = c.g / 255.0f;
+  float b = c.b / 255.0f;
+
+  float max = fmaxf(r, fmaxf(g, b));
+  float min = fminf(r, fminf(g, b));
+  float delta = max - min;
+
+  HSV hsv = {0};
+
+  if (delta > 0.00001f) {
+    if (max == r) {
+      hsv.h = 60.0f * fmodf(((g - b) / delta), 6.0f);
+    } else if (max == g) {
+      hsv.h = 60.0f * (((b - r) / delta) + 2.0f);
+    } else if (max == b) {
+      hsv.h = 60.0f * (((r - g) / delta) + 4.0f);
+    }
+  } else {
+    hsv.h = 0.0f;
+  }
+
+  if (hsv.h < 0.0f)
+    hsv.h += 360.0f;
+
+  hsv.s = (max <= 0.0f) ? 0.0f : (delta / max);
+
+  hsv.v = max;
+
+  return hsv;
+}
+
+Color hsv_to_rgb(HSV hsv) {
+  float c = hsv.v * hsv.s;
+  float x = c * (1.0f - fabsf(fmodf(hsv.h / 60.0f, 2.0f) - 1.0f));
+  float m = hsv.v - c;
+
+  float r, g, b;
+
+  if (hsv.h < 60) {
+    r = c;
+    g = x;
+    b = 0;
+  } else if (hsv.h < 120) {
+    r = x;
+    g = c;
+    b = 0;
+  } else if (hsv.h < 180) {
+    r = 0;
+    g = c;
+    b = x;
+  } else if (hsv.h < 240) {
+    r = 0;
+    g = x;
+    b = c;
+  } else if (hsv.h < 300) {
+    r = x;
+    g = 0;
+    b = c;
+  } else {
+    r = c;
+    g = 0;
+    b = x;
+  }
+
+  return (Color){.r = (unsigned char)clamp((r + m) * 255.0f, 0, 255),
+                 .g = (unsigned char)clamp((g + m) * 255.0f, 0, 255),
+                 .b = (unsigned char)clamp((b + m) * 255.0f, 0, 255),
+                 .a = 255};
+}
+
+Color interpolate_color_hsv(Color start, Color end, float t) {
+  HSV a = rgb_to_hsv(start);
+  HSV b = rgb_to_hsv(end);
+
+  float h_diff = fmodf(b.h - a.h + 360.0f, 360.0f);
+  if (h_diff > 180.0f)
+    h_diff -= 360.0f;
+
+  HSV interpolated = {
+      .h = fmodf(a.h + t * h_diff + 360.0f, 360.0f),
+      .s = a.s + t * (b.s - a.s),
+      .v = a.v + t * (b.v - a.v),
+  };
+  return hsv_to_rgb(interpolated);
+}
+
+float ease_water(float t) { return t * t * (3 - 2 * t); }
+
+float normalize(float value) { return (value + 1) / 2; }
+
+void place_circle(float grid[GRID_WIDTH][GRID_HEIGHT], int x, int y,
+                  int radius) {
+  for (int i = -radius; i <= radius; i++) {
+    for (int j = -radius; j <= radius; j++) {
+      if (i * i + j * j <= radius * radius) {
+        int gridX = x + i;
+        int gridY = y + j;
+        if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 &&
+            gridY < GRID_HEIGHT) {
+          grid[gridX][gridY] = -1.0f;
+        }
+      }
+    }
+  }
+}
+
 int main() {
   InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Waves");
   SetTargetFPS(TARGET_FPS);
@@ -109,21 +234,33 @@ int main() {
       int gridX = mousePosition.x / CELL_SIZE;
       int gridY = mousePosition.y / CELL_SIZE;
 
-      if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 &&
-          gridY < GRID_HEIGHT) {
-        grid_prev[gridX][gridY] = 1;
-        grid[gridX][gridY] = 1;
+      if (gridX > 0 && gridX < GRID_WIDTH - 1 && gridY > 0 &&
+          gridY < GRID_HEIGHT - 1) {
+        place_circle(grid, gridX, gridY, 20.0f);
       }
     }
 
     for (int x = 0; x < WINDOW_WIDTH / CELL_SIZE; x++) {
       for (int y = 0; y < WINDOW_HEIGHT / CELL_SIZE; y++) {
-        Color cell_color = (Color){.r = FOREGROUND.r * grid[x][y],
-                                   .g = FOREGROUND.g * grid[x][y],
-                                   .b = FOREGROUND.b * grid[x][y],
-                                   .a = FOREGROUND.a};
-        DrawRectangle(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE,
-                      cell_color);
+        float d = grid[x][y];
+        float norm = normalize(d);
+        float brightness = ease_water(norm);
+        Color base = interpolate_color_hsv(DEEP_WATER, BRIGHT_WATER,
+                                           clamp(brightness, 0, 1));
+        HSV baseHSV = rgb_to_hsv(base);
+
+        baseHSV.s = clamp(baseHSV.s + brightness * 0.3f, 0, 1);
+        baseHSV.v = clamp(baseHSV.v + brightness * 0.2f, 0, 1);
+
+        baseHSV.h = fmodf(baseHSV.h + brightness * 15.0f, 360.0f);
+
+        base = hsv_to_rgb(baseHSV);
+
+        base.r = clamp(base.r + brightness * 5, 0, 170);
+        base.g = clamp(base.g + brightness * 10, 0, 170);
+        base.b = clamp(base.b + brightness * 50, 80, 255);
+
+        DrawRectangle(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE, base);
       }
     }
 
