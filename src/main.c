@@ -5,18 +5,23 @@
 #define WINDOW_HEIGHT 600
 #define TARGET_FPS 60
 
-#define CELL_SIZE 3
+#define CELL_SIZE 2
+#define POINTER_SIZE 40
 #define GRID_WIDTH WINDOW_WIDTH / CELL_SIZE
 #define GRID_HEIGHT WINDOW_HEIGHT / CELL_SIZE
-#define DT 0.6
-#define DX 1.5
-#define C 1
-#define R (C * DT / DX) * (C * DT / DX)
-#define DAMPING 0.99
+#define VISUAL_CLAMP 0.5f
+
+#define C_PIXELS 200.0f
+#define SIGMA 0.5f
+
+#define DX ((float)CELL_SIZE)
+#define DT (SIGMA * DX / C_PIXELS)
+#define R (SIGMA * SIGMA)
+#define DAMPING_PER_SECOND 0.2f
+#define DAMPING powf(DAMPING_PER_SECOND, DT)
 
 #define BACKGROUND (Color){0x18, 0x18, 0x18, 255}
 #define FOREGROUND (Color){0xf5, 0xf5, 0xf5, 255}
-
 #define DEEP_WATER (Color){0x0a, 0x1e, 0x3c, 255}
 #define BRIGHT_WATER (Color){0x19, 0x3c, 0x6e, 255}
 
@@ -26,9 +31,9 @@ void progress_wave(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
 
   for (int y = 1; y < GRID_HEIGHT - 1; ++y) {
     for (int x = 1; x < GRID_WIDTH - 1; ++x) {
-      grid_next[x][y] = 2 * grid[x][y] - grid_prev[x][y] +
+      grid_next[x][y] = 2.f * grid[x][y] - grid_prev[x][y] +
                         R * (grid[x + 1][y] + grid[x - 1][y] + grid[x][y + 1] +
-                             grid[x][y - 1] - 4 * grid[x][y]);
+                             grid[x][y - 1] - 4.f * grid[x][y]);
       grid_next[x][y] *= DAMPING;
     }
   }
@@ -42,54 +47,6 @@ void progress_wave(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
   for (int y = 0; y < GRID_HEIGHT; ++y) {
     for (int x = 0; x < GRID_WIDTH; ++x) {
       grid[x][y] = grid_next[x][y];
-    }
-  }
-}
-
-void progress_sand(int grid[GRID_WIDTH][GRID_HEIGHT]) {
-  int new_grid[GRID_WIDTH][GRID_HEIGHT] = {0};
-  for (int y = 0; y < GRID_HEIGHT; ++y) {
-    for (int x = 0; x < GRID_WIDTH; ++x) {
-      int cell = grid[x][y];
-      if (cell) {
-        if (y + 1 < GRID_HEIGHT) {
-          if (y + 1 < GRID_HEIGHT - 1 && x + 1 < GRID_WIDTH - 1 &&
-              grid[x][y + 1] && grid[x][y + 2] && !grid[x + 1][y + 1] &&
-              !grid[x - 1][y + 1]) {
-            int go_right = GetRandomValue(0, 1);
-            new_grid[x][y] = 0;
-            if (go_right) {
-              new_grid[x + 1][y + 1] = 1;
-            } else {
-              new_grid[x - 1][y + 1] = 1;
-            }
-          } else if (y + 1 < GRID_HEIGHT - 1 && x + 1 < GRID_WIDTH - 1 &&
-                     grid[x][y + 1] && grid[x][y + 2] && !grid[x + 1][y + 1]) {
-            new_grid[x][y] = 0;
-            new_grid[x + 1][y + 1] = 1;
-          } else if (y + 1 < GRID_HEIGHT - 1 && x + 1 < GRID_WIDTH - 1 &&
-                     grid[x][y + 1] && grid[x][y + 2] && !grid[x - 1][y + 1]) {
-            new_grid[x][y] = 0;
-            new_grid[x - 1][y + 1] = 1;
-          } else if (grid[x][y + 1]) {
-            new_grid[x][y] = 1;
-          } else {
-            new_grid[x][y] = 0;
-            new_grid[x][y + 1] = 1;
-          }
-        } else {
-          new_grid[x][y] = 1;
-        }
-        if (x + 1 == GRID_WIDTH || x == 0) {
-          new_grid[x][y] = 1;
-        }
-      }
-    }
-  }
-
-  for (int y = 0; y < GRID_HEIGHT; ++y) {
-    for (int x = 0; x < GRID_WIDTH; ++x) {
-      grid[x][y] = new_grid[x][y];
     }
   }
 }
@@ -198,9 +155,14 @@ Color interpolate_color_hsv(Color start, Color end, float t) {
 
 float ease_water(float t) { return t * t * (3 - 2 * t); }
 
-float normalize(float value) { return (value + 1) / 2; }
+float normalize(float value, float old_min, float old_max, float new_min,
+                float new_max) {
+  return (value - old_min) * (new_max - new_min) / (old_max - old_min) +
+         new_min;
+}
 
-void place_circle(float grid[GRID_WIDTH][GRID_HEIGHT], int x, int y,
+void place_circle(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
+                  float grid[GRID_WIDTH][GRID_HEIGHT], int x, int y,
                   int radius) {
   for (int i = -radius; i <= radius; i++) {
     for (int j = -radius; j <= radius; j++) {
@@ -209,7 +171,8 @@ void place_circle(float grid[GRID_WIDTH][GRID_HEIGHT], int x, int y,
         int gridY = y + j;
         if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 &&
             gridY < GRID_HEIGHT) {
-          grid[gridX][gridY] = -1.0f;
+          grid_prev[gridX][gridY] = 2.0f;
+          grid[gridX][gridY] = 2.0f;
         }
       }
     }
@@ -223,11 +186,18 @@ int main() {
   float grid_prev[GRID_WIDTH][GRID_HEIGHT] = {0};
   float grid[GRID_WIDTH][GRID_HEIGHT] = {0};
 
+  float accumulator = 0.0f;
   while (!WindowShouldClose()) {
+    const float frameTime = GetFrameTime();
+    accumulator += frameTime;
+
+    while (accumulator >= DT) {
+      progress_wave(grid_prev, grid);
+      accumulator -= DT;
+    }
+
     BeginDrawing();
     ClearBackground(BACKGROUND);
-
-    progress_wave(grid_prev, grid);
 
     if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
       Vector2 mousePosition = GetMousePosition();
@@ -236,14 +206,14 @@ int main() {
 
       if (gridX > 0 && gridX < GRID_WIDTH - 1 && gridY > 0 &&
           gridY < GRID_HEIGHT - 1) {
-        place_circle(grid, gridX, gridY, 20.0f);
+        place_circle(grid_prev, grid, gridX, gridY, POINTER_SIZE / CELL_SIZE);
       }
     }
 
     for (int x = 0; x < WINDOW_WIDTH / CELL_SIZE; x++) {
       for (int y = 0; y < WINDOW_HEIGHT / CELL_SIZE; y++) {
         float d = grid[x][y];
-        float norm = normalize(d);
+        float norm = normalize(d, -VISUAL_CLAMP, VISUAL_CLAMP, 0, 1);
         float brightness = ease_water(norm);
         Color base = interpolate_color_hsv(DEEP_WATER, BRIGHT_WATER,
                                            clamp(brightness, 0, 1));
@@ -252,13 +222,11 @@ int main() {
         baseHSV.s = clamp(baseHSV.s + brightness * 0.3f, 0, 1);
         baseHSV.v = clamp(baseHSV.v + brightness * 0.2f, 0, 1);
 
-        baseHSV.h = fmodf(baseHSV.h + brightness * 15.0f, 360.0f);
-
         base = hsv_to_rgb(baseHSV);
 
         base.r = clamp(base.r + brightness * 5, 0, 170);
         base.g = clamp(base.g + brightness * 10, 0, 170);
-        base.b = clamp(base.b + brightness * 50, 80, 255);
+        base.b = clamp(base.b + brightness * 50, 80, 200);
 
         DrawRectangle(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE, base);
       }
