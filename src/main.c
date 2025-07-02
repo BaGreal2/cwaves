@@ -163,7 +163,7 @@ float normalize(float value, float old_min, float old_max, float new_min,
 
 void place_circle(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
                   float grid[GRID_WIDTH][GRID_HEIGHT], int x, int y,
-                  int radius) {
+                  int radius, float force) {
   for (int i = -radius; i <= radius; i++) {
     for (int j = -radius; j <= radius; j++) {
       if (i * i + j * j <= radius * radius) {
@@ -171,8 +171,8 @@ void place_circle(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
         int gridY = y + j;
         if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 &&
             gridY < GRID_HEIGHT) {
-          grid_prev[gridX][gridY] = 2.0f;
-          grid[gridX][gridY] = 2.0f;
+          grid_prev[gridX][gridY] = force;
+          grid[gridX][gridY] = force;
         }
       }
     }
@@ -206,7 +206,7 @@ int main() {
 
       if (gridX > 0 && gridX < GRID_WIDTH - 1 && gridY > 0 &&
           gridY < GRID_HEIGHT - 1) {
-        place_circle(grid_prev, grid, gridX, gridY, POINTER_SIZE / CELL_SIZE);
+        place_circle(grid_prev, grid, gridX, gridY, POINTER_SIZE / CELL_SIZE, 1.5f);
       }
     }
 
