@@ -5,7 +5,7 @@
 #define WINDOW_HEIGHT 600
 #define TARGET_FPS 60
 
-#define CELL_SIZE 2
+#define CELL_SIZE 4
 #define POINTER_SIZE 40
 #define GRID_WIDTH WINDOW_WIDTH / CELL_SIZE
 #define GRID_HEIGHT WINDOW_HEIGHT / CELL_SIZE
@@ -162,8 +162,8 @@ float normalize(float value, float old_min, float old_max, float new_min,
 }
 
 void place_circle(float grid_prev[GRID_WIDTH][GRID_HEIGHT],
-                  float grid[GRID_WIDTH][GRID_HEIGHT], int x, int y,
-                  int radius, float force) {
+                  float grid[GRID_WIDTH][GRID_HEIGHT], int x, int y, int radius,
+                  float force) {
   for (int i = -radius; i <= radius; i++) {
     for (int j = -radius; j <= radius; j++) {
       if (i * i + j * j <= radius * radius) {
@@ -201,12 +201,13 @@ int main() {
 
     if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
       Vector2 mousePosition = GetMousePosition();
-      int gridX = mousePosition.x / CELL_SIZE;
-      int gridY = mousePosition.y / CELL_SIZE;
+      int grid_x = mousePosition.x / CELL_SIZE;
+      int grid_y = mousePosition.y / CELL_SIZE;
 
-      if (gridX > 0 && gridX < GRID_WIDTH - 1 && gridY > 0 &&
-          gridY < GRID_HEIGHT - 1) {
-        place_circle(grid_prev, grid, gridX, gridY, POINTER_SIZE / CELL_SIZE, 1.5f);
+      if (grid_x > 0 && grid_x < GRID_WIDTH - 1 && grid_y > 0 &&
+          grid_y < GRID_HEIGHT - 1) {
+        place_circle(grid_prev, grid, grid_x, grid_y, POINTER_SIZE / CELL_SIZE,
+                     1.5f);
       }
     }
 
@@ -217,12 +218,12 @@ int main() {
         float brightness = ease_water(norm);
         Color base = interpolate_color_hsv(DEEP_WATER, BRIGHT_WATER,
                                            clamp(brightness, 0, 1));
-        HSV baseHSV = rgb_to_hsv(base);
+        HSV base_hsv = rgb_to_hsv(base);
 
-        baseHSV.s = clamp(baseHSV.s + brightness * 0.3f, 0, 1);
-        baseHSV.v = clamp(baseHSV.v + brightness * 0.2f, 0, 1);
+        base_hsv.s = clamp(base_hsv.s + brightness * 0.3f, 0, 1);
+        base_hsv.v = clamp(base_hsv.v + brightness * 0.2f, 0, 1);
 
-        base = hsv_to_rgb(baseHSV);
+        base = hsv_to_rgb(base_hsv);
 
         base.r = clamp(base.r + brightness * 5, 0, 170);
         base.g = clamp(base.g + brightness * 10, 0, 170);
